@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Imagine AI Image Generator</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+  <script type="importmap">
+{
+  "imports": {
+    "react": "https://aistudiocdn.com/react@^19.1.1",
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.1.1/",
+    "react/": "https://aistudiocdn.com/react@^19.1.1/",
+    "@google/genai": "https://aistudiocdn.com/@google/genai@^1.17.0"
+  }
+}
+</script>
+<style>
+  @keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+  .animate-fadeIn {
+    animation: fadeIn 0.3s ease-out forwards;
+  }
+  
+  @keyframes fadeInScaleUp {
+    from {
+      opacity: 0;
+      transform: scale(0.95) translateY(10px);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1) translateY(0);
+    }
+  }
+  .animate-fadeInScaleUp {
+    animation: fadeInScaleUp 0.5s ease-out forwards;
+  }
+
+  /* --- DREAM WEAVE EMPTY STATE --- */
+  .dream-container {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background-color: #050505;
+    color: #e0e0e0;
+    overflow: hidden;
+  }
+
+  #dream-canvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 0;
+  }
+
+  .dream-content {
+    position: relative;
+    z-index: 1;
+    text-align: center;
+    pointer-events: none; /* Allow mouse events to pass through to the canvas */
+  }
+
+  /* Typography */
+  @keyframes text-glow-in {
+    from {
+      opacity: 0;
+      text-shadow: 0 0 4px rgba(224, 233, 255, 0.2);
+      filter: blur(3px);
+    }
+    to {
+      opacity: 1;
+      text-shadow: 0 0 10px rgba(224, 233, 255, 0.3);
+      filter: blur(0px);
+    }
+  }
+
+  .dream-title {
+    font-size: 3.5rem; /* 56px */
+    font-weight: 500;
+    color: #e0e0e0;
+    letter-spacing: 0.1em;
+    animation: text-glow-in 1.5s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.5s both;
+  }
+
+  .dream-subtitle {
+    font-size: 1.125rem; /* 18px */
+    color: #a0a0a0;
+    margin-top: 1.5rem;
+    max-width: 400px;
+    line-height: 1.6;
+    letter-spacing: 0.02em;
+    animation: text-glow-in 1.5s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.8s both;
+  }
+</style>
+</head>
+  <body class="bg-[#0a0a0a]">
+    <div id="root"></div>
+    <script type="module" src="/index.tsx"></script>
+  </body>
+</html>
