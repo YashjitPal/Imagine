@@ -1,5 +1,6 @@
+
 import React, { useState, useCallback, useEffect, useRef } from 'react';
-import { generateImages, editImage } from './services/geminiService';
+import { generateImages, generateWithImages } from './services/geminiService';
 import Header from './components/Header';
 import PromptInput from './components/PromptInput';
 import ImageGrid from './components/ImageGrid';
@@ -34,7 +35,8 @@ const App: React.FC = () => {
   const [images, setImages] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
-  const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [detailViewImage, setDetailViewImage] = useState<string | null>(null);
+  const [promptImages, setPromptImages] = useState<string[]>([]);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   
   const [settings, setSettings] = useState<AppSettings>({
@@ -227,12 +229,12 @@ const App: React.FC = () => {
     setIsLoading(true);
     setError(null);
     setCurrentSearch(prompt);
-    setPrompt(''); // Clear prompt immediately on submission
+    
+    const hasPromptImages = promptImages.length > 0;
 
-    const imageToEdit = selectedImage;
-    if (imageToEdit) {
-      setSelectedImage(null);
-    }
+    // Clear inputs immediately on submission
+    setPrompt('');
+    setPromptImages([]);
     
     const effectiveApiKey = settings.useDefaultApiKey ? null : settings.apiKey;
     
@@ -243,8 +245,8 @@ const App: React.FC = () => {
     };
 
     try {
-      const generatedImages = imageToEdit
-        ? await editImage(prompt, imageToEdit, generationSettings)
+      const generatedImages = hasPromptImages
+        ? await generateWithImages(prompt, promptImages, generationSettings)
         : await generateImages(prompt, generationSettings);
         
       setImages(prevImages => [...generatedImages, ...prevImages]);
@@ -252,20 +254,30 @@ const App: React.FC = () => {
       const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred.';
       setError(`Failed to generate images. ${errorMessage}`);
       console.error(err);
-      if (imageToEdit) {
-        setSelectedImage(imageToEdit);
-      }
+      // Don't restore image on error, keep UI clean
     } finally {
       setIsLoading(false);
     }
-  }, [prompt, isLoading, selectedImage, settings]);
+  }, [prompt, isLoading, promptImages, settings]);
   
-  const handleSelectImage = (image: string) => {
-    setSelectedImage(image);
+  const handleViewImage = (image: string) => {
+    setDetailViewImage(image);
   };
 
-  const handleDeselectImage = () => {
-    setSelectedImage(null);
+  const handleCloseDetailView = () => {
+    setDetailViewImage(null);
+  };
+  
+  const handleAddImageToPrompt = (image: string) => {
+    setPromptImages(prev => [...prev, image]);
+  }
+
+  const handleImagePasted = (imageData: string) => {
+    setPromptImages(prev => [...prev, imageData]);
+  };
+
+  const handleRemovePromptImage = (indexToRemove: number) => {
+    setPromptImages(prev => prev.filter((_, index) => index !== indexToRemove));
   };
 
   const handleGoHome = () => {
@@ -273,7 +285,8 @@ const App: React.FC = () => {
     setCurrentSearch('');
     setError(null);
     setPrompt('');
-    setSelectedImage(null);
+    setDetailViewImage(null);
+    setPromptImages([]);
   };
   
   const isInitialState = !isLoading && images.length === 0;
@@ -294,7 +307,13 @@ const App: React.FC = () => {
     }
 
     if (images.length > 0) {
-      return <ImageGrid images={images} onSelectImage={handleSelectImage} isLoading={isLoading} loadingCount={settings.numberOfImages}/>;
+      return <ImageGrid 
+        images={images} 
+        onViewImage={handleViewImage} 
+        onAddImageToPrompt={handleAddImageToPrompt}
+        isLoading={isLoading} 
+        loadingCount={settings.numberOfImages}
+      />;
     }
 
     return null;
@@ -314,7 +333,7 @@ const App: React.FC = () => {
         <main className="transition-opacity duration-500 opacity-100 pt-20">
             {currentSearch && (
                 <div className="px-4 mb-4 animate-fadeInScaleUp">
-                    <span className="inline-block bg-[#2d2f31] text-gray-200 text-sm font-medium px-4 py-2 rounded-full">
+                    <span className="inline-block bg-[#1c1c1e] text-white text-base font-medium px-5 py-2.5 rounded-full border border-white/10">
                         {currentSearch}
                     </span>
                 </div>
@@ -329,11 +348,12 @@ const App: React.FC = () => {
         setPrompt={setPrompt}
         onSubmit={handleGenerate}
         isLoading={isLoading}
-        editingImage={selectedImage}
-        onClearEditingImage={handleDeselectImage}
+        promptImages={promptImages}
+        onRemovePromptImage={handleRemovePromptImage}
+        onImagePasted={handleImagePasted}
       />
-      {selectedImage && (
-        <ImageDetailView image={selectedImage} onClose={handleDeselectImage} />
+      {detailViewImage && (
+        <ImageDetailView image={detailViewImage} onClose={handleCloseDetailView} />
       )}
       <SettingsModal
         isOpen={isSettingsOpen}

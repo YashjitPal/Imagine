@@ -1,3 +1,4 @@
+
 import { GoogleGenAI, Modality, GenerateContentResponse } from "@google/genai";
 import { Model } from '../App';
 
@@ -16,13 +17,20 @@ export interface GenerationSettings {
 }
 
 const processImageResponses = (responses: GenerateContentResponse[]): string[] => {
-    const images = responses.map(response => {
-      const imagePart = response.candidates?.[0]?.content?.parts?.find(part => !!part.inlineData);
-      if (imagePart?.inlineData) {
-        return `data:${imagePart.inlineData.mimeType};base64,${imagePart.inlineData.data}`;
-      }
-      return null;
-    }).filter((img): img is string => img !== null);
+    const images: string[] = [];
+    for (const response of responses) {
+        if (response.candidates) {
+            for (const candidate of response.candidates) {
+                if (candidate.content && candidate.content.parts) {
+                    for (const part of candidate.content.parts) {
+                        if (part.inlineData) {
+                            images.push(`data:${part.inlineData.mimeType};base64,${part.inlineData.data}`);
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     if (images.length === 0) {
         console.error("No images generated from responses:", JSON.stringify(responses, null, 2));
@@ -52,14 +60,13 @@ export const generateImages = async (prompt: string, settings: GenerationSetting
         return response.generatedImages.map(img => `data:image/jpeg;base64,${img.image.imageBytes}`);
     } else {
         // Handle 'gemini-2.5-flash-image-preview' for text-to-image
-        // Prepend an instruction to ensure the model understands the intent is image generation.
-        const imageGenerationPrompt = `Generate an image of ${prompt}`;
-        
+        // Use a system instruction to force image generation mode.
         const imagePromises = Array.from({ length: settings.numberOfImages }).map(() =>
             ai.models.generateContent({
                 model: 'gemini-2.5-flash-image-preview',
-                contents: { parts: [{ text: imageGenerationPrompt }] },
+                contents: { parts: [{ text: prompt }] },
                 config: {
+                    systemInstruction: "You are an image generation model. Given a prompt, you must generate an image. Do not respond with text, only with an image.",
                     responseModalities: [Modality.IMAGE, Modality.TEXT],
                 },
             })
@@ -82,23 +89,22 @@ const parseBase64 = (base64String: string) => {
   return { mimeType: match[1], data: match[2] };
 };
 
-export const editImage = async (prompt: string, imageBase64: string, settings: GenerationSettings): Promise<string[]> => {
+export const generateWithImages = async (prompt: string, imagesBase64: string[], settings: GenerationSettings): Promise<string[]> => {
   try {
-    const { mimeType, data } = parseBase64(imageBase64);
     const ai = getClient(settings.apiKey);
 
-    const imagePart = {
-      inlineData: {
-        mimeType,
-        data,
-      },
-    };
+    const imageParts = imagesBase64.map(base64String => {
+        const { mimeType, data } = parseBase64(base64String);
+        return { inlineData: { mimeType, data } };
+    });
+
     const textPart = { text: prompt };
+    const allParts = [...imageParts, textPart];
 
     const imagePromises = Array.from({ length: settings.numberOfImages }).map(() =>
       ai.models.generateContent({
         model: 'gemini-2.5-flash-image-preview', // Editing always uses this model
-        contents: { parts: [imagePart, textPart] },
+        contents: { parts: allParts },
         config: {
           responseModalities: [Modality.IMAGE, Modality.TEXT],
         },
@@ -109,8 +115,8 @@ export const editImage = async (prompt: string, imageBase64: string, settings: G
     return processImageResponses(responses);
 
   } catch (error) {
-    console.error("Error editing image:", error);
+    console.error("Error generating with images:", error);
     const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
-    throw new Error(`Could not edit the image: ${errorMessage}`);
+    throw new Error(`Could not generate images with context: ${errorMessage}`);
   }
 };
