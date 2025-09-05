@@ -39,6 +39,28 @@
     animation: fadeInScaleUp 0.5s ease-out forwards;
   }
 
+  @keyframes fadeOut {
+    from { opacity: 1; }
+    to { opacity: 0; }
+  }
+  .animate-fadeOut {
+    animation: fadeOut 0.3s ease-in forwards;
+  }
+
+  @keyframes fadeOutScaleDown {
+    from {
+      opacity: 1;
+      transform: scale(1) translateY(0);
+    }
+    to {
+      opacity: 0;
+      transform: scale(0.95) translateY(10px);
+    }
+  }
+  .animate-fadeOutScaleDown {
+    animation: fadeOutScaleDown 0.3s ease-in forwards;
+  }
+
   /* --- DREAM WEAVE EMPTY STATE --- */
   .dream-container {
     position: fixed;

@@ -1,20 +1,23 @@
 import { GoogleGenAI, Modality, GenerateContentResponse } from "@google/genai";
+import { Model } from '../App';
 
-const API_KEY = process.env.API_KEY;
+const getClient = (apiKey?: string | null) => {
+  const keyToUse = apiKey || process.env.API_KEY;
+  if (!keyToUse) {
+    throw new Error("API key is missing. Please configure it in the settings or as an environment variable.");
+  }
+  return new GoogleGenAI({ apiKey: keyToUse });
+};
 
-if (!API_KEY) {
-  // In a real app, you'd want to handle this more gracefully.
-  // For this example, we assume it's set in the environment.
-  console.error("API_KEY environment variable not set.");
+export interface GenerationSettings {
+    apiKey?: string | null;
+    numberOfImages: number;
+    model: Model;
 }
-
-const ai = new GoogleGenAI({ apiKey: API_KEY! });
 
 const processImageResponses = (responses: GenerateContentResponse[]): string[] => {
     const images = responses.map(response => {
-      // The model can return multiple parts (e.g. text and image). We need to find the image part.
       const imagePart = response.candidates?.[0]?.content?.parts?.find(part => !!part.inlineData);
-
       if (imagePart?.inlineData) {
         return `data:${imagePart.inlineData.mimeType};base64,${imagePart.inlineData.data}`;
       }
@@ -23,33 +26,51 @@ const processImageResponses = (responses: GenerateContentResponse[]): string[] =
 
     if (images.length === 0) {
         console.error("No images generated from responses:", JSON.stringify(responses, null, 2));
-        throw new Error("Failed to generate any images.");
+        throw new Error("Failed to generate any images from the model's response.");
     }
-
     return images;
 }
 
-// FIX: Use the correct `generateImages` method and model for image generation.
-export const generateImages = async (prompt: string): Promise<string[]> => {
+export const generateImages = async (prompt: string, settings: GenerationSettings): Promise<string[]> => {
   try {
-    const response = await ai.models.generateImages({
-      model: 'imagen-4.0-generate-001',
-      prompt,
-      config: {
-        numberOfImages: 6,
-        outputMimeType: 'image/jpeg',
-      },
-    });
+    const ai = getClient(settings.apiKey);
 
-    if (!response.generatedImages || response.generatedImages.length === 0) {
-      console.error("No images generated from response:", JSON.stringify(response, null, 2));
-      throw new Error("Failed to generate any images.");
+    if (settings.model === 'imagen-4.0-generate-001') {
+        const response = await ai.models.generateImages({
+          model: 'imagen-4.0-generate-001',
+          prompt,
+          config: {
+            numberOfImages: settings.numberOfImages,
+            outputMimeType: 'image/jpeg',
+          },
+        });
+
+        if (!response.generatedImages || response.generatedImages.length === 0) {
+          throw new Error("The API did not return any images.");
+        }
+        
+        return response.generatedImages.map(img => `data:image/jpeg;base64,${img.image.imageBytes}`);
+    } else {
+        // Handle 'gemini-2.5-flash-image-preview' for text-to-image
+        // Prepend an instruction to ensure the model understands the intent is image generation.
+        const imageGenerationPrompt = `Generate an image of ${prompt}`;
+        
+        const imagePromises = Array.from({ length: settings.numberOfImages }).map(() =>
+            ai.models.generateContent({
+                model: 'gemini-2.5-flash-image-preview',
+                contents: { parts: [{ text: imageGenerationPrompt }] },
+                config: {
+                    responseModalities: [Modality.IMAGE, Modality.TEXT],
+                },
+            })
+        );
+        const responses = await Promise.all(imagePromises);
+        return processImageResponses(responses);
     }
-    
-    return response.generatedImages.map(img => `data:image/jpeg;base64,${img.image.imageBytes}`);
   } catch (error) {
     console.error("Error generating images:", error);
-    throw new Error("Could not generate images from the prompt.");
+    const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
+    throw new Error(`Could not generate images: ${errorMessage}`);
   }
 };
 
@@ -61,9 +82,10 @@ const parseBase64 = (base64String: string) => {
   return { mimeType: match[1], data: match[2] };
 };
 
-export const editImage = async (prompt: string, imageBase64: string): Promise<string[]> => {
+export const editImage = async (prompt: string, imageBase64: string, settings: GenerationSettings): Promise<string[]> => {
   try {
     const { mimeType, data } = parseBase64(imageBase64);
+    const ai = getClient(settings.apiKey);
 
     const imagePart = {
       inlineData: {
@@ -73,9 +95,9 @@ export const editImage = async (prompt: string, imageBase64: string): Promise<st
     };
     const textPart = { text: prompt };
 
-    const imagePromises = Array.from({ length: 6 }).map(() =>
+    const imagePromises = Array.from({ length: settings.numberOfImages }).map(() =>
       ai.models.generateContent({
-        model: 'gemini-2.5-flash-image-preview',
+        model: 'gemini-2.5-flash-image-preview', // Editing always uses this model
         contents: { parts: [imagePart, textPart] },
         config: {
           responseModalities: [Modality.IMAGE, Modality.TEXT],
@@ -88,6 +110,7 @@ export const editImage = async (prompt: string, imageBase64: string): Promise<st
 
   } catch (error) {
     console.error("Error editing image:", error);
-    throw new Error("Could not edit the image with the provided prompt.");
+    const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
+    throw new Error(`Could not edit the image: ${errorMessage}`);
   }
 };

@@ -5,6 +5,28 @@ import PromptInput from './components/PromptInput';
 import ImageGrid from './components/ImageGrid';
 import SkeletonLoader from './components/SkeletonLoader';
 import ImageDetailView from './components/ImageDetailView';
+import SettingsModal from './components/SettingsModal';
+import { GenerationSettings } from './services/geminiService';
+
+export type Model = 'imagen-4.0-generate-001' | 'gemini-2.5-flash-image-preview';
+
+export interface AppSettings {
+  apiKey: string;
+  useDefaultApiKey: boolean;
+  model: Model;
+  numberOfImages: number;
+}
+
+const DreamWeave: React.FC = () => (
+  <div className="dream-container">
+    <canvas id="dream-canvas"></canvas>
+    <div className="dream-content">
+      <h2 className="dream-title">Imagine</h2>
+      <p className="dream-subtitle">Compose a prompt to begin.</p>
+    </div>
+  </div>
+);
+
 
 const App: React.FC = () => {
   const [prompt, setPrompt] = useState<string>('');
@@ -13,15 +35,52 @@ const App: React.FC = () => {
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
-  // FIX: Explicitly initialize useRef with null and a more specific type.
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  
+  const [settings, setSettings] = useState<AppSettings>({
+    apiKey: '',
+    useDefaultApiKey: true,
+    model: 'imagen-4.0-generate-001',
+    numberOfImages: 4, // Default to a safe value for Imagen 4
+  });
+
   const animationFrameId = useRef<number | null>(null);
+
+  // Load settings from localStorage on initial render
+  useEffect(() => {
+    try {
+      const savedSettings = localStorage.getItem('imagine-app-settings');
+      if (savedSettings) {
+        const parsed = JSON.parse(savedSettings);
+        // Basic validation to ensure essential keys exist
+        if (parsed.model && parsed.numberOfImages !== undefined) {
+          // Validate and clamp numberOfImages based on the loaded model
+          const maxImages = parsed.model === 'imagen-4.0-generate-001' ? 4 : 6;
+          if (parsed.numberOfImages > maxImages) {
+            parsed.numberOfImages = maxImages;
+          }
+          setSettings(parsed);
+        }
+      }
+    } catch (e) {
+      console.error('Failed to load settings from localStorage.', e);
+    }
+  }, []);
+
+  // Save settings to localStorage whenever they change
+  useEffect(() => {
+    try {
+      localStorage.setItem('imagine-app-settings', JSON.stringify(settings));
+    } catch (e) {
+      console.error('Failed to save settings to localStorage.', e);
+    }
+  }, [settings]);
+
 
   useEffect(() => {
     // Only run the animation if we're in the empty state
     if (images.length > 0 || isLoading) {
       if (animationFrameId.current) {
-        // FIX: Cancel the animation frame. The error "Expected 1 arguments, but got 0" seems to be from a faulty tool, the code is correct.
-        // Adding robustness by clearing the ref after cancellation.
          cancelAnimationFrame(animationFrameId.current);
          animationFrameId.current = null;
       }
@@ -168,21 +227,30 @@ const App: React.FC = () => {
     setIsLoading(true);
     setError(null);
     setCurrentSearch(prompt);
+    setPrompt(''); // Clear prompt immediately on submission
 
     const imageToEdit = selectedImage;
     if (imageToEdit) {
       setSelectedImage(null);
     }
+    
+    const effectiveApiKey = settings.useDefaultApiKey ? null : settings.apiKey;
+    
+    const generationSettings: GenerationSettings = {
+        apiKey: effectiveApiKey,
+        numberOfImages: settings.numberOfImages,
+        model: settings.model,
+    };
 
     try {
       const generatedImages = imageToEdit
-        ? await editImage(prompt, imageToEdit)
-        : await generateImages(prompt);
+        ? await editImage(prompt, imageToEdit, generationSettings)
+        : await generateImages(prompt, generationSettings);
         
       setImages(prevImages => [...generatedImages, ...prevImages]);
-      setPrompt('');
     } catch (err) {
-      setError('Failed to generate images. Please try again.');
+      const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred.';
+      setError(`Failed to generate images. ${errorMessage}`);
       console.error(err);
       if (imageToEdit) {
         setSelectedImage(imageToEdit);
@@ -190,7 +258,7 @@ const App: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [prompt, isLoading, selectedImage]);
+  }, [prompt, isLoading, selectedImage, settings]);
   
   const handleSelectImage = (image: string) => {
     setSelectedImage(image);
@@ -200,11 +268,21 @@ const App: React.FC = () => {
     setSelectedImage(null);
   };
 
+  const handleGoHome = () => {
+    setImages([]);
+    setCurrentSearch('');
+    setError(null);
+    setPrompt('');
+    setSelectedImage(null);
+  };
+  
+  const isInitialState = !isLoading && images.length === 0;
+
   const renderContent = () => {
     if (isLoading && images.length === 0) {
       return (
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-4 px-4 pb-28 pt-20">
-          {Array.from({ length: 6 }).map((_, index) => (
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-4 px-4 pb-28">
+          {Array.from({ length: settings.numberOfImages }).map((_, index) => (
             <SkeletonLoader key={index} index={index} />
           ))}
         </div>
@@ -216,37 +294,36 @@ const App: React.FC = () => {
     }
 
     if (images.length > 0) {
-      return <ImageGrid images={images} onSelectImage={handleSelectImage} isLoading={isLoading} />;
+      return <ImageGrid images={images} onSelectImage={handleSelectImage} isLoading={isLoading} loadingCount={settings.numberOfImages}/>;
     }
 
-    // "Dream Weave" empty state
-    return (
-      <div className="dream-container">
-        <canvas id="dream-canvas"></canvas>
-        <div className="dream-content">
-          <h2 className="dream-title">Imagine</h2>
-          <p className="dream-subtitle">Compose a prompt to begin.</p>
-        </div>
-      </div>
-    );
+    return null;
   };
-  
-  const isInitialState = !isLoading && images.length === 0;
 
   return (
     <div className="min-h-screen bg-[#0a0a0a] text-white font-sans">
-      {!isInitialState && <Header />}
-      <main className={isInitialState ? '' : 'pt-20'}>
-        {currentSearch && !isLoading && !isInitialState && (
-            <div className="px-4 mb-4 animate-fadeInScaleUp">
-                <span className="inline-block bg-[#2d2f31] text-gray-200 text-sm font-medium px-4 py-2 rounded-full">
-                    {currentSearch}
-                </span>
-            </div>
-        )}
-         {error && !isLoading && images.length > 0 && <div className="text-center text-red-400 mb-4">{error}</div>}
-        {renderContent()}
-      </main>
+      <Header 
+        onOpenSettings={() => setIsSettingsOpen(true)} 
+        isInitial={isInitialState}
+        onGoHome={handleGoHome}
+      />
+      
+      {isInitialState ? (
+        <DreamWeave />
+      ) : (
+        <main className="transition-opacity duration-500 opacity-100 pt-20">
+            {currentSearch && (
+                <div className="px-4 mb-4 animate-fadeInScaleUp">
+                    <span className="inline-block bg-[#2d2f31] text-gray-200 text-sm font-medium px-4 py-2 rounded-full">
+                        {currentSearch}
+                    </span>
+                </div>
+            )}
+            {error && !isLoading && images.length > 0 && <div className="text-center text-red-400 mb-4">{error}</div>}
+            {renderContent()}
+        </main>
+      )}
+
       <PromptInput
         prompt={prompt}
         setPrompt={setPrompt}
@@ -258,6 +335,12 @@ const App: React.FC = () => {
       {selectedImage && (
         <ImageDetailView image={selectedImage} onClose={handleDeselectImage} />
       )}
+      <SettingsModal
+        isOpen={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
+        settings={settings}
+        setSettings={setSettings}
+      />
     </div>
   );
 };
