@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { ArrowLeftIcon } from './icons/ArrowLeftIcon';
 import { HeartIcon } from './icons/HeartIcon';
@@ -57,7 +58,7 @@ const ImageDetailView: React.FC<ImageDetailViewProps> = ({ image, onClose }) => 
         className={`flex flex-col items-center ${isClosing ? 'animate-fadeOutScaleDown' : 'animate-fadeInScaleUp'}`}
         onClick={handleContentClick}
       >
-        <div className="w-full">
+        <div className="w-full max-w-5xl">
             <img
             src={image}
             alt="Selected generated image"

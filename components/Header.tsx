@@ -10,7 +10,7 @@ interface HeaderProps {
 
 const Header: React.FC<HeaderProps> = ({ onOpenSettings, onGoHome, isInitial }) => {
   const headerBaseClasses = "fixed top-0 left-0 right-0 z-10 transition-all duration-300";
-  const headerActiveClasses = "bg-black/30 backdrop-blur-lg";
+  const headerActiveClasses = "bg-[#121212]/80 backdrop-blur-lg";
 
   return (
     <header className={`${headerBaseClasses} ${isInitial ? '' : headerActiveClasses}`}>

@@ -61,6 +61,52 @@
     animation: fadeOutScaleDown 0.3s ease-in forwards;
   }
 
+  @keyframes slideIn {
+    from {
+      opacity: 0;
+      transform: translateX(10px) scale(0.9);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0) scale(1);
+    }
+  }
+  .animate-slideIn {
+    animation: slideIn 0.3s ease-out forwards;
+  }
+
+  @keyframes slideOut {
+    from {
+      opacity: 1;
+      transform: translateX(0) scale(1);
+    }
+    to {
+      opacity: 0;
+      transform: translateX(-10px) scale(0.9);
+    }
+  }
+  .animate-slideOut {
+    animation: slideOut 0.3s ease-in forwards;
+  }
+
+  /* --- Mosaic Loader --- */
+  @keyframes pulseMosaic {
+    0%, 100% {
+      background-color: rgba(200, 210, 255, 0.03);
+      transform: scale(0.9);
+    }
+    50% {
+      background-color: rgba(200, 210, 255, 0.12);
+      transform: scale(1);
+    }
+  }
+  .animate-pulseMosaic {
+    animation-name: pulseMosaic;
+    animation-iteration-count: infinite;
+    animation-timing-function: cubic-bezier(0.4, 0, 0.6, 1);
+    will-change: background-color, transform;
+  }
+
   /* --- DREAM WEAVE EMPTY STATE --- */
   .dream-container {
     position: fixed;
@@ -126,7 +172,7 @@
   }
 </style>
 </head>
-  <body class="bg-[#0a0a0a]">
+  <body class="bg-[#121212]">
     <div id="root"></div>
     <script type="module" src="/index.tsx"></script>
   </body>

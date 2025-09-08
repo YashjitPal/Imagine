@@ -1,33 +1,44 @@
+
 import React from 'react';
 
-interface SkeletonLoaderProps {
-  index: number;
-}
+// A simple pseudo-random number generator for deterministic randomness.
+// This ensures the animation is random-looking but consistent on every render.
+const pseudoRandom = (seed: number) => {
+  let x = Math.sin(seed) * 10000;
+  return x - Math.floor(x);
+};
 
-const SkeletonLoader: React.FC<SkeletonLoaderProps> = ({ index }) => {
+const SkeletonLoader: React.FC<{ index: number }> = ({ index }) => {
+  const numTiles = 8 * 10;
+
   return (
     <div
-      className="relative w-full aspect-[3/4] bg-[#2d2f31] rounded-2xl overflow-hidden animate-fadeInScaleUp"
-      style={{ animationDelay: `${index * 100}ms`, opacity: 0 }}
+      className="w-full h-full"
+      aria-label="Generating image..."
+      role="status"
     >
-      <div className="absolute inset-0 w-full h-full bg-gradient-to-r from-transparent via-white/10 to-transparent"
-           style={{
-                backgroundSize: '200% 100%',
-                animation: 'shimmer 1.5s infinite linear',
-           }}
-      ></div>
-      <style>
-        {`
-          @keyframes shimmer {
-            0% {
-              background-position: 200% 0;
-            }
-            100% {
-              background-position: -200% 0;
-            }
-          }
-        `}
-      </style>
+      <div className="absolute inset-0 grid grid-cols-8 grid-rows-10 gap-px p-px">
+        {Array.from({ length: numTiles }).map((_, i) => {
+          // Seed randomness with both the component index and the tile index
+          // to ensure each loader on the screen looks unique.
+          const seed = index * numTiles + i;
+          
+          // Each tile gets a random duration and delay for an organic, twinkling effect.
+          const randomDuration = 2.5 + pseudoRandom(seed) * 3; // 2.5s to 5.5s
+          const randomDelay = pseudoRandom(seed + 1) * 2.5;    // 0s to 2.5s
+          
+          return (
+            <div
+              key={i}
+              className="animate-pulseMosaic"
+              style={{
+                animationDuration: `${randomDuration}s`,
+                animationDelay: `${randomDelay}s`,
+              }}
+            />
+          );
+        })}
+      </div>
     </div>
   );
 };

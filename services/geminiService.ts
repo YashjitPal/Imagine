@@ -60,13 +60,15 @@ export const generateImages = async (prompt: string, settings: GenerationSetting
         return response.generatedImages.map(img => `data:image/jpeg;base64,${img.image.imageBytes}`);
     } else {
         // Handle 'gemini-2.5-flash-image-preview' for text-to-image
-        // Use a system instruction to force image generation mode.
+        // The model can sometimes respond with text if the prompt is ambiguous.
+        // We make the intent clear through a strong system instruction and by framing the user's prompt.
+        const imageGenerationPrompt = `Generate an image depicting: ${prompt}`;
         const imagePromises = Array.from({ length: settings.numberOfImages }).map(() =>
             ai.models.generateContent({
                 model: 'gemini-2.5-flash-image-preview',
-                contents: { parts: [{ text: prompt }] },
+                contents: { parts: [{ text: imageGenerationPrompt }] },
                 config: {
-                    systemInstruction: "You are an image generation model. Given a prompt, you must generate an image. Do not respond with text, only with an image.",
+                    systemInstruction: "You are an advanced AI image generation model. Your only function is to create and output an image based on the user's text prompt. You must not engage in conversation, answer questions, or produce any text as a response. Your output must be an image.",
                     responseModalities: [Modality.IMAGE, Modality.TEXT],
                 },
             })

@@ -4,9 +4,9 @@ import { generateImages, generateWithImages } from './services/geminiService';
 import Header from './components/Header';
 import PromptInput from './components/PromptInput';
 import ImageGrid from './components/ImageGrid';
-import SkeletonLoader from './components/SkeletonLoader';
 import ImageDetailView from './components/ImageDetailView';
 import SettingsModal from './components/SettingsModal';
+import ErrorDisplay from './components/ErrorDisplay';
 import { GenerationSettings } from './services/geminiService';
 
 export type Model = 'imagen-4.0-generate-001' | 'gemini-2.5-flash-image-preview';
@@ -16,6 +16,11 @@ export interface AppSettings {
   useDefaultApiKey: boolean;
   model: Model;
   numberOfImages: number;
+}
+
+export interface GridItem {
+  id: string;
+  src?: string;
 }
 
 const DreamWeave: React.FC = () => (
@@ -32,7 +37,7 @@ const DreamWeave: React.FC = () => (
 const App: React.FC = () => {
   const [prompt, setPrompt] = useState<string>('');
   const [currentSearch, setCurrentSearch] = useState<string>('');
-  const [images, setImages] = useState<string[]>([]);
+  const [gridItems, setGridItems] = useState<GridItem[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [detailViewImage, setDetailViewImage] = useState<string | null>(null);
@@ -47,6 +52,8 @@ const App: React.FC = () => {
   });
 
   const animationFrameId = useRef<number | null>(null);
+  const generationControllerRef = useRef<{ isCancelled: boolean }>({ isCancelled: false });
+  const isInitialState = !isLoading && gridItems.length === 0 && !error;
 
   // Load settings from localStorage on initial render
   useEffect(() => {
@@ -78,10 +85,21 @@ const App: React.FC = () => {
     }
   }, [settings]);
 
+  // Automatically switch to editing model when prompt images are added
+  const { model } = settings;
+  useEffect(() => {
+    // When we have images in the prompt, we are in an editing workflow.
+    // Automatically switch to the model that supports image editing for a better user experience.
+    if (promptImages.length > 0 && model !== 'gemini-2.5-flash-image-preview') {
+      setSettings(prev => ({ ...prev, model: 'gemini-2.5-flash-image-preview' }));
+    }
+  }, [promptImages.length, model]);
+
 
   useEffect(() => {
-    // Only run the animation if we're in the empty state
-    if (images.length > 0 || isLoading) {
+    // Only run the animation if we're in the initial state.
+    // If not, ensure any existing animation is cleaned up.
+    if (!isInitialState) {
       if (animationFrameId.current) {
          cancelAnimationFrame(animationFrameId.current);
          animationFrameId.current = null;
@@ -221,18 +239,26 @@ const App: React.FC = () => {
         animationFrameId.current = null;
       }
     };
-}, [images.length, isLoading]);
+}, [isInitialState]);
 
   const handleGenerate = useCallback(async () => {
-    if (!prompt || isLoading) return;
+    if (isLoading || (!prompt && promptImages.length === 0)) return;
+
+    generationControllerRef.current.isCancelled = false;
+    const currentController = generationControllerRef.current;
 
     setIsLoading(true);
     setError(null);
-    setCurrentSearch(prompt);
-    
-    const hasPromptImages = promptImages.length > 0;
+    setCurrentSearch(prompt || `Remixing ${promptImages.length} image${promptImages.length > 1 ? 's' : ''}`);
 
-    // Clear inputs immediately on submission
+    if (detailViewImage) {
+        setDetailViewImage(null);
+    }
+
+    const generationPrompt = prompt;
+    const generationImages = promptImages;
+    const hasPromptImages = generationImages.length > 0;
+
     setPrompt('');
     setPromptImages([]);
     
@@ -244,36 +270,64 @@ const App: React.FC = () => {
         model: settings.model,
     };
 
+    const placeholderIDs = Array.from({ length: settings.numberOfImages }).map(() => `placeholder_${Date.now()}_${Math.random()}`);
+    const placeholders: GridItem[] = placeholderIDs.map(id => ({ id, src: undefined }));
+    setGridItems(prev => [...placeholders, ...prev]);
+
     try {
-      const generatedImages = hasPromptImages
-        ? await generateWithImages(prompt, promptImages, generationSettings)
-        : await generateImages(prompt, generationSettings);
+      const generatedSrcs = hasPromptImages
+        ? await generateWithImages(generationPrompt, generationImages, generationSettings)
+        : await generateImages(generationPrompt, generationSettings);
+      
+      if (currentController.isCancelled) return;
         
-      setImages(prevImages => [...generatedImages, ...prevImages]);
+      setGridItems(currentItems => {
+        const newItems = [...currentItems];
+        let generatedIdx = 0;
+        // Find the placeholders we just added and update their src
+        for (let i = 0; i < newItems.length && generatedIdx < generatedSrcs.length; i++) {
+          if (placeholderIDs.includes(newItems[i].id)) {
+            newItems[i].src = generatedSrcs[generatedIdx];
+            generatedIdx++;
+          }
+        }
+        // Remove any remaining placeholders if not enough images were generated
+        return newItems.filter(item => !(placeholderIDs.includes(item.id) && !item.src));
+      });
     } catch (err) {
+      if (currentController.isCancelled) return;
       const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred.';
       setError(`Failed to generate images. ${errorMessage}`);
+      // On error, remove the placeholders we added
+      setGridItems(currentItems => currentItems.filter(item => !placeholderIDs.includes(item.id)));
       console.error(err);
-      // Don't restore image on error, keep UI clean
     } finally {
+      if (currentController.isCancelled) return;
       setIsLoading(false);
     }
-  }, [prompt, isLoading, promptImages, settings]);
+  }, [prompt, isLoading, promptImages, settings, detailViewImage]);
+
+  const handleAddImageToPrompt = (image: string) => {
+    setPromptImages(prev => {
+      if (prev.includes(image)) return prev;
+      return [...prev, image];
+    });
+  };
   
   const handleViewImage = (image: string) => {
     setDetailViewImage(image);
+    handleAddImageToPrompt(image);
   };
 
   const handleCloseDetailView = () => {
+    if (detailViewImage) {
+      setPromptImages(prev => prev.filter(img => img !== detailViewImage));
+    }
     setDetailViewImage(null);
   };
   
-  const handleAddImageToPrompt = (image: string) => {
-    setPromptImages(prev => [...prev, image]);
-  }
-
   const handleImagePasted = (imageData: string) => {
-    setPromptImages(prev => [...prev, imageData]);
+    handleAddImageToPrompt(imageData);
   };
 
   const handleRemovePromptImage = (indexToRemove: number) => {
@@ -281,46 +335,35 @@ const App: React.FC = () => {
   };
 
   const handleGoHome = () => {
-    setImages([]);
+    if (isLoading) {
+      generationControllerRef.current.isCancelled = true;
+      setIsLoading(false);
+    }
+    setGridItems([]);
     setCurrentSearch('');
     setError(null);
     setPrompt('');
     setDetailViewImage(null);
     setPromptImages([]);
   };
+
+  const handleClearError = () => {
+    setError(null);
+  }
   
-  const isInitialState = !isLoading && images.length === 0;
-
   const renderContent = () => {
-    if (isLoading && images.length === 0) {
-      return (
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-4 px-4 pb-28">
-          {Array.from({ length: settings.numberOfImages }).map((_, index) => (
-            <SkeletonLoader key={index} index={index} />
-          ))}
-        </div>
-      );
-    }
-
-    if (error && images.length === 0) {
-      return <div className="text-center text-red-400 mt-20 pt-20">{error}</div>;
-    }
-
-    if (images.length > 0) {
+    if (gridItems.length > 0) {
       return <ImageGrid 
-        images={images} 
+        items={gridItems} 
         onViewImage={handleViewImage} 
         onAddImageToPrompt={handleAddImageToPrompt}
-        isLoading={isLoading} 
-        loadingCount={settings.numberOfImages}
       />;
     }
-
     return null;
   };
 
   return (
-    <div className="min-h-screen bg-[#0a0a0a] text-white font-sans">
+    <div className="min-h-screen bg-[#121212] text-white font-sans">
       <Header 
         onOpenSettings={() => setIsSettingsOpen(true)} 
         isInitial={isInitialState}
@@ -330,15 +373,14 @@ const App: React.FC = () => {
       {isInitialState ? (
         <DreamWeave />
       ) : (
-        <main className="transition-opacity duration-500 opacity-100 pt-20">
+        <main className="transition-opacity duration-500 opacity-100 pt-20 max-w-7xl mx-auto px-4">
             {currentSearch && (
-                <div className="px-4 mb-4 animate-fadeInScaleUp">
-                    <span className="inline-block bg-[#1c1c1e] text-white text-base font-medium px-5 py-2.5 rounded-full border border-white/10">
+                <div className="mb-5 animate-fadeInScaleUp">
+                    <span className="inline-block max-w-full bg-[#1c1c1e] text-white text-base font-medium px-5 py-2.5 rounded-3xl border border-white/10 break-words">
                         {currentSearch}
                     </span>
                 </div>
             )}
-            {error && !isLoading && images.length > 0 && <div className="text-center text-red-400 mb-4">{error}</div>}
             {renderContent()}
         </main>
       )}
@@ -351,6 +393,7 @@ const App: React.FC = () => {
         promptImages={promptImages}
         onRemovePromptImage={handleRemovePromptImage}
         onImagePasted={handleImagePasted}
+        isPreviewing={detailViewImage !== null}
       />
       {detailViewImage && (
         <ImageDetailView image={detailViewImage} onClose={handleCloseDetailView} />
@@ -361,6 +404,9 @@ const App: React.FC = () => {
         settings={settings}
         setSettings={setSettings}
       />
+      {error && (
+        <ErrorDisplay message={error} onClose={handleClearError} />
+      )}
     </div>
   );
 };

@@ -1,26 +1,21 @@
 
 import React from 'react';
 import ImageCard from './ImageCard';
-import SkeletonLoader from './SkeletonLoader';
+import { GridItem } from '../App';
 
 interface ImageGridProps {
-  images: string[];
+  items: GridItem[];
   onViewImage: (image: string) => void;
   onAddImageToPrompt: (image: string) => void;
-  isLoading?: boolean;
-  loadingCount?: number;
 }
 
-const ImageGrid: React.FC<ImageGridProps> = ({ images, onViewImage, onAddImageToPrompt, isLoading, loadingCount = 6 }) => {
+const ImageGrid: React.FC<ImageGridProps> = ({ items, onViewImage, onAddImageToPrompt }) => {
   return (
-    <div className="grid grid-cols-2 md:grid-cols-3 gap-4 px-4 pb-28">
-      {isLoading && Array.from({ length: loadingCount }).map((_, index) => (
-        <SkeletonLoader key={`skeleton-${index}`} index={index} />
-      ))}
-      {images.map((src, index) => (
+    <div className="grid grid-cols-2 md:grid-cols-3 gap-4 pb-28">
+      {items.map((item, index) => (
         <ImageCard 
-          key={index} 
-          src={src} 
+          key={item.id} 
+          src={item.src} 
           index={index}
           onView={onViewImage} 
           onAddToPrompt={onAddImageToPrompt}
